@@ -23,7 +23,8 @@
   .row a.card { flex: 1; display: flex; justify-content: space-between; align-items: center; padding: 14px 16px;
                 text-decoration: none; color: inherit; min-width: 0; }
   .row a.card b { font-size: 22px; }
-  .row a.card span { font-size: 15px; text-align: right; margin-left: 12px; }
+  .row a.card span { font-size: 15px; text-align: right; margin-left: 12px; min-width: 0; }
+  .row a.card span small { display: block; font-size: 13px; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .row a.log { display: flex; align-items: center; padding: 0 18px; background: #1f3864; color: #fff; text-decoration: none; font-weight: 700; }
 </style>
 </head>
@@ -84,9 +85,12 @@
   function listView(data) {
     var h = '<h1>Cards</h1>';
     data.cards.forEach(function (c) {
-      var who = c.status === 'Checked Out' && c.by ? ', ' + esc(c.by) : '';
+      // A card in use shows who has it and, on a second line, the job it is out for.
+      var inUse = c.status === 'Checked Out' || c.status === 'Transferred';
+      var who = inUse && c.by ? ', ' + esc(c.by) : '';
+      var job = inUse && c.event ? '<small>' + esc(c.event) + '</small>' : '';
       h += '<div class="row ' + cls(c.status) + '"><a class="card" href="' + ROOT + encodeURIComponent(c.code) + '/"><b>' + esc(c.code) +
-        '</b><span>' + esc(c.status || 'No status yet') + who + '</span></a>' + logButton(c.log, 'Log', 'log') + '</div>';
+        '</b><span>' + esc(c.status || 'No status yet') + who + job + '</span></a>' + logButton(c.log, 'Log', 'log') + '</div>';
     });
     h += '<p>' + logButton(data.form, 'Log several cards') + '</p>';
     return h;
