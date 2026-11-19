@@ -7,6 +7,7 @@
 <style>
   body { font: 18px/1.4 -apple-system, Helvetica, Arial, sans-serif; margin: 0; padding: 20px; color: #111; background: #fff; }
   h1 { font-size: 40px; margin: 0 0 4px; }
+  h2 { font-size: 22px; margin: 28px 0 12px; }
   .muted { color: #666; margin: 0 0 20px; }
   .status { font-size: 28px; font-weight: 700; padding: 16px 20px; border-radius: 12px; margin: 0 0 20px; }
   .ready { background: #d9ead3; color: #1b5e20; }
@@ -14,11 +15,24 @@
   .moved { background: #fff2cc; color: #7f5a00; }
   .none { background: #e8e8e8; color: #444; }
   .note { background: #fdf3d0; color: #5a4300; padding: 12px 16px; border-radius: 10px; margin: 0 0 20px; font-size: 17px; }
-  dl { margin: 0 0 24px; }
+  dl { margin: 0 0 8px; }
   dt { color: #666; font-size: 14px; margin-top: 10px; }
   dd { margin: 0; font-size: 20px; }
   .button { display: block; text-align: center; background: #1f3864; color: #fff; text-decoration: none; font-weight: 700;
             padding: 16px; border-radius: 12px; font-size: 20px; }
+  label { display: block; font-size: 15px; color: #444; margin: 14px 0 6px; }
+  select, input[type=text] { width: 100%; box-sizing: border-box; font-size: 18px; padding: 12px; border: 1px solid #bbb;
+                             border-radius: 10px; background: #fff; color: #111; }
+  .actions { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 18px; }
+  .actions button { font: inherit; font-size: 20px; font-weight: 700; padding: 16px; border-radius: 12px; border: 0; cursor: pointer; }
+  .actions button.a-out { background: #b71c1c; color: #fff; }
+  .actions button.a-moved { background: #7f5a00; color: #fff; }
+  .actions button.a-ready { background: #1b5e20; color: #fff; }
+  .actions button:disabled { opacity: 0.5; }
+  .answer { margin: 18px 0 0; padding: 14px 16px; border-radius: 10px; font-size: 18px; }
+  .answer.good { background: #d9ead3; color: #1b5e20; }
+  .answer.bad { background: #f4cccc; color: #b71c1c; }
+  .small { font-size: 15px; margin-top: 24px; }
   .row { display: flex; align-items: stretch; border-radius: 10px; margin: 0 0 8px; overflow: hidden; }
   .row a.card { flex: 1; display: block; padding: 14px 16px; text-decoration: none; color: inherit; min-width: 0; }
   .row a.card .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -29,16 +43,19 @@
 </style>
 </head>
 <body>
-<div id="app"><h1 id="title">Oi cards</h1><p class="muted">Loading.</p></div>
+<div id="app"><h1>Oi cards</h1><p class="muted">Loading.</p></div>
 <script>
-  // The page a card's NFC tag opens: https://osimages.github.io/oi/<CODE>. It asks the Oi status
-  // sheet's script for the card as data, without cookies, and draws it here. The script's own
-  // page shows Google's "unable to open the file" error in iPhone Safari; this one never touches
-  // a Google sign-in. Looking writes nothing. Log opens the Oi Card Log form, which needs an Oi
-  // Google account.
+  // The page a card's NFC tag or QR code opens: https://osimages.github.io/oi/<CODE>, or
+  // .../<CODE>/log to jump to the buttons. It reads the card from the Oi status sheet's script as
+  // data and logs through the script's log action, so it never needs a Google sign-in. The
+  // script applies the same rule as the form and answers at once, refusals included.
+  // The key below is public by nature: anyone with this page can log a card, and every change
+  // is in the sheet's Log with source "Card page". Change the key in the script to cut it off.
   var DATA = 'https://script.google.com/macros/s/AKfycbwK17tqJC1kY8HJACM2uH0aqJaSnwgTfXHDKRzBJD1SGi8IgjY1QQxgl381K2ZHq96K/exec';
+  var PAGE_KEY = 'cdbf32b9549041f2a2ad6cf15a8d73a0';
   var ROOT = '/oi/';
   var CODE_PATTERN = /^[A-Z]{2,3}-\d{2,}$/;
+  var DRY = /[?&]dry=1/.test(location.search);  // test mode: decide and answer, save nothing
 
   var code = '';
   var parts = location.pathname.split('/').filter(function (p) { return p; }).reverse();
@@ -46,12 +63,9 @@
     var p = decodeURIComponent(parts[i]).toUpperCase();
     if (CODE_PATTERN.test(p)) { code = p; break; }
   }
-  // .../SD-04/log opens the Oi Card Log form with the card already ticked, in whichever list
-  // it is in right now. The plain address shows the status page.
-  var wantsLog = /\/log\/?$/i.test(location.pathname);
-  if (wantsLog && code) {
-    document.getElementById('app').innerHTML = '<h1>' + code + '</h1><p class="muted">Opening the log for this card.</p>';
-  }
+  var jumpToLog = /\/log\/?$/i.test(location.pathname);
+
+  var data = null, answer = null, sending = false;
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
@@ -61,8 +75,26 @@
   function cls(status) {
     return status === 'Ready' ? 'ready' : status === 'Checked Out' ? 'out' : status === 'Transferred' ? 'moved' : 'none';
   }
-  function logButton(url, label, extra) {
-    return '<a class="' + (extra || 'button') + '" href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(label) + '</a>';
+  function remembered(key) { try { return localStorage.getItem(key) || ''; } catch (e) { return ''; } }
+  function remember(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
+
+  function logPanel(c) {
+    var me = remembered('oiName');
+    var h = '<h2 id="log">Log ' + esc(c.code) + (DRY ? ' (test, nothing is saved)' : '') + '</h2>';
+    h += '<label for="who">Who are you?</label><select id="who"><option value="">Choose your name</option>';
+    (data.names || []).forEach(function (n) { h += '<option' + (n === me ? ' selected' : '') + '>' + esc(n) + '</option>'; });
+    h += '</select>';
+    h += '<label for="job">Job, when checking out</label><select id="job"><option value="">Choose the job</option>';
+    (data.jobs || []).forEach(function (j) { h += '<option>' + esc(j) + '</option>'; });
+    h += '<option>Personal</option><option value="__other">Another job, type it</option></select>';
+    h += '<input type="text" id="otherjob" placeholder="Job name" style="display:none;margin-top:8px">';
+    h += '<div class="actions">' +
+      '<button class="a-out" data-status="Checked Out">Checked Out</button>' +
+      '<button class="a-moved" data-status="Transferred">Transferred</button>' +
+      '<button class="a-ready" data-status="Ready">Ready</button></div>';
+    if (answer) h += '<div class="answer ' + (answer.good ? 'good' : 'bad') + '">' + esc(answer.text) + '</div>';
+    h += '<p class="small"><a href="' + esc(c.log) + '" target="_blank" rel="noopener">Use the Google Form instead</a></p>';
+    return h;
   }
 
   function cardView(c) {
@@ -78,11 +110,10 @@
       if (c.transferredBy) h += '<dt>Transferred by</dt><dd>' + esc(c.transferredBy) + (c.transferredAt ? ', ' + esc(c.transferredAt) : '') + '</dd>';
       h += '</dl>';
     }
-    h += '<p>' + logButton(c.log, 'Log ' + c.code) + '</p>';
-    return h;
+    return h + logPanel(c);
   }
 
-  function listView(data) {
+  function listView() {
     var h = '<h1>Cards</h1>';
     data.cards.forEach(function (c) {
       // A card in use shows who has it and, on a second line, the job it is out for.
@@ -90,38 +121,79 @@
       var who = inUse && c.by ? ', ' + esc(c.by) : '';
       var job = inUse && c.event ? '<span class="job">' + esc(c.event) + '</span>' : '';
       h += '<div class="row ' + cls(c.status) + '"><a class="card" href="' + ROOT + encodeURIComponent(c.code) + '/"><span class="top"><b>' +
-        esc(c.code) + '</b><span>' + esc(c.status || 'No status yet') + who + '</span></span>' + job + '</a>' + logButton(c.log, 'Log', 'log') + '</div>';
+        esc(c.code) + '</b><span>' + esc(c.status || 'No status yet') + who + '</span></span>' + job + '</a>' +
+        '<a class="log" href="' + ROOT + encodeURIComponent(c.code) + '/log/">Log</a></div>';
     });
-    h += '<p>' + logButton(data.form, 'Log several cards') + '</p>';
+    h += '<p><a class="button" href="' + esc(data.form) + '" target="_blank" rel="noopener">Log several cards</a></p>';
     return h;
   }
 
-  function show(html) { document.getElementById('app').innerHTML = html; }
+  function render() {
+    var app = document.getElementById('app');
+    if (!code) { app.innerHTML = listView(); return; }
+    if (!data.cards.length) {
+      app.innerHTML = '<p><a href="' + ROOT + '">All cards</a></p><h1>' + esc(code) + '</h1><p class="muted">Not in the register.</p>';
+      return;
+    }
+    app.innerHTML = cardView(data.cards[0]);
+    var job = document.getElementById('job'), other = document.getElementById('otherjob');
+    job.addEventListener('change', function () { other.style.display = job.value === '__other' ? 'block' : 'none'; });
+    Array.prototype.forEach.call(document.querySelectorAll('.actions button'), function (b) {
+      b.disabled = sending;
+      b.addEventListener('click', function () { logIt(b.getAttribute('data-status')); });
+    });
+  }
 
-  var busy = false, opened = false;
-  function load() {
-    if (busy) return;
-    busy = true;
-    fetch(DATA + '?format=json' + (code ? '&card=' + encodeURIComponent(code) : ''), { credentials: 'omit' })
+  function logIt(status) {
+    var who = document.getElementById('who').value;
+    var jobValue = document.getElementById('job').value;
+    var job = jobValue === '__other' ? document.getElementById('otherjob').value.trim() : jobValue;
+    if (!who) { answer = { good: false, text: 'Choose your name first.' }; return render(); }
+    if (status === 'Checked Out' && !job) { answer = { good: false, text: 'Choose the job you are taking it for, or Personal.' }; return render(); }
+    remember('oiName', who);
+    sending = true; answer = { good: true, text: 'Logging.' }; render();
+    var body = { action: 'log', token: PAGE_KEY, name: who, card: code, status: status, job: job, dry_run: DRY };
+    fetch(DATA, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), credentials: 'omit' })
       .then(function (r) { return r.json(); })
-      .then(function (data) {
-        busy = false;
-        document.title = code ? code + ' - Oi cards' : 'Oi cards';
-        if (!code) return show(listView(data));
-        if (!data.cards.length) return show('<p><a href="' + ROOT + '">All cards</a></p><h1>' + esc(code) + '</h1><p class="muted">Not in the register.</p>');
-        show(cardView(data.cards[0]));
-        if (wantsLog && data.cards[0].log && !opened) { opened = true; location.href = data.cards[0].log; }
+      .then(function (res) {
+        sending = false;
+        if (!res.ok) { answer = { good: false, text: res.error || 'Not logged.' }; return render(); }
+        var c = (res.cards || [])[0] || {};
+        var good = c.outcome === 'applied' || c.outcome === 'taken over';
+        answer = { good: good, text: (good ? 'Done. ' : 'Not done. ') + (res.message || '') + (DRY ? ' (Test: nothing was saved.)' : '') };
+        load();
       })
       .catch(function () {
-        busy = false;
-        show('<h1>' + esc(code || 'Oi cards') + '</h1><p class="muted">Could not reach the card list. Check the signal and try again.</p>' +
-          '<p><a class="button" href="">Try again</a></p>');
+        sending = false;
+        answer = { good: false, text: 'Could not reach the card sheet. Nothing was logged. Check the signal and try again.' };
+        render();
+      });
+  }
+
+  var loading = false;
+  function load() {
+    if (loading) return;
+    loading = true;
+    fetch(DATA + '?format=json' + (code ? '&card=' + encodeURIComponent(code) : ''), { credentials: 'omit' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        loading = false;
+        data = d;
+        document.title = code ? code + ' - Oi cards' : 'Oi cards';
+        render();
+        if (jumpToLog) { jumpToLog = false; var el = document.getElementById('log'); if (el) el.scrollIntoView(); }
+      })
+      .catch(function () {
+        loading = false;
+        if (data) return;
+        document.getElementById('app').innerHTML = '<h1>' + esc(code || 'Oi cards') + '</h1><p class="muted">Could not reach the card list. Check the signal and try again.</p>' +
+          '<p><a class="button" href="">Try again</a></p>';
       });
   }
 
   load();
-  // Coming back from the form's tab: fetch again, so what was just logged shows.
-  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') load(); });
+  // Coming back to this tab: fetch again, so what someone else logged meanwhile shows.
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && !sending) load(); });
 </script>
 </body>
 </html>
