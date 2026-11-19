@@ -32,6 +32,7 @@
   .answer { margin: 18px 0 0; padding: 14px 16px; border-radius: 10px; font-size: 18px; }
   .answer.good { background: #d9ead3; color: #1b5e20; }
   .answer.bad { background: #f4cccc; color: #b71c1c; }
+  .answer.wait { background: #eeeeee; color: #333; }
   .small { font-size: 15px; margin-top: 24px; }
   .row { display: flex; align-items: stretch; border-radius: 10px; margin: 0 0 8px; overflow: hidden; }
   .row a.card { flex: 1; display: block; padding: 14px 16px; text-decoration: none; color: inherit; min-width: 0; }
@@ -92,7 +93,7 @@
       '<button class="a-out" data-status="Checked Out">Checked Out</button>' +
       '<button class="a-moved" data-status="Transferred">Transferred</button>' +
       '<button class="a-ready" data-status="Ready">Ready</button></div>';
-    if (answer) h += '<div class="answer ' + (answer.good ? 'good' : 'bad') + '">' + esc(answer.text) + '</div>';
+    if (answer) h += '<div class="answer ' + (answer.wait ? 'wait' : answer.good ? 'good' : 'bad') + '">' + esc(answer.text) + '</div>';
     h += '<p class="small"><a href="' + esc(c.log) + '" target="_blank" rel="noopener">Use the Google Form instead</a></p>';
     return h;
   }
@@ -151,7 +152,7 @@
     if (!who) { answer = { good: false, text: 'Choose your name first.' }; return render(); }
     if (status === 'Checked Out' && !job) { answer = { good: false, text: 'Choose the job you are taking it for, or Personal.' }; return render(); }
     remember('oiName', who);
-    sending = true; answer = { good: true, text: 'Logging.' }; render();
+    sending = true; answer = { wait: true, text: 'Logging ' + code + '. Wait for the answer here, it can take 20 seconds.' }; render();
     var body = { action: 'log', token: PAGE_KEY, name: who, card: code, status: status, job: job, dry_run: DRY };
     fetch(DATA, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), credentials: 'omit' })
       .then(function (r) { return r.json(); })

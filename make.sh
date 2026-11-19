@@ -1,6 +1,6 @@
 #!/bin/sh
-# Builds the tag site: per card code a status page and a /log page that opens the form with
-# the card ticked, plus index.html (all cards) and 404.html.
+# Builds the tag site: per card code a status page and a /log page that opens on the
+# log buttons, plus index.html (all cards) and 404.html.
 # Every page is the same file; it reads the card code from its own address, so a card
 # added to the register works through 404.html before it has a folder of its own.
 # Run from this folder: sh make.sh SD-01 SD-02 ...
