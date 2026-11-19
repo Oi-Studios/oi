@@ -45,6 +45,12 @@
     var p = decodeURIComponent(parts[i]).toUpperCase();
     if (CODE_PATTERN.test(p)) { code = p; break; }
   }
+  // .../SD-04/log opens the Oi Card Log form with the card already ticked, in whichever list
+  // it is in right now. The plain address shows the status page.
+  var wantsLog = /\/log\/?$/i.test(location.pathname);
+  if (wantsLog && code) {
+    document.getElementById('app').innerHTML = '<h1>' + code + '</h1><p class="muted">Opening the log for this card.</p>';
+  }
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
@@ -88,7 +94,7 @@
 
   function show(html) { document.getElementById('app').innerHTML = html; }
 
-  var busy = false;
+  var busy = false, opened = false;
   function load() {
     if (busy) return;
     busy = true;
@@ -100,6 +106,7 @@
         if (!code) return show(listView(data));
         if (!data.cards.length) return show('<p><a href="' + ROOT + '">All cards</a></p><h1>' + esc(code) + '</h1><p class="muted">Not in the register.</p>');
         show(cardView(data.cards[0]));
+        if (wantsLog && data.cards[0].log && !opened) { opened = true; location.href = data.cards[0].log; }
       })
       .catch(function () {
         busy = false;
