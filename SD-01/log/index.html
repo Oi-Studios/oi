@@ -54,8 +54,8 @@
   // The page a card's NFC tag or QR code opens: https://osimages.github.io/oi/<CODE>, or
   // .../<CODE>/log to jump to the buttons. It reads the card from the Oi status sheet's script as
   // data and logs through the script's log action, so it never needs a Google sign-in. The
-  // list (https://osimages.github.io/oi/) groups items by type (memory cards, SSD drives, as the
-  // sheet's Types tab lists them) and logs several at once: tick them, then a button.
+  // list (https://osimages.github.io/oi/) groups items by code (SD cards, microSD cards, SSD
+  // drives) and logs several at once: tick them, then a button.
   // The script applies the holder rule and answers at once, refusals included. The Google Form
   // this replaced was retired on 2026-11-20.
   // The key below is public by nature: anyone with this page can log a card, and every change
@@ -88,16 +88,18 @@
   function remembered(key) { try { return localStorage.getItem(key) || ''; } catch (e) { return ''; } }
   function remember(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
 
-  // The list's sections: one per tracked type, in the sheet's Types order, then any type the
-  // list doesn't name. An item without a type counts as the first type.
-  function groupCards(cards, types) {
-    var order = (types || []).slice(), groups = {};
+  // The list's sections, by the front of the code: SD cards, microSD cards, SSD drives, then any
+  // other prefix under its own name. Empty sections are left out.
+  var GROUPS = [['SD', 'SD cards'], ['MSD', 'MicroSD cards'], ['SSD', 'SSD drives']];
+  function groupCards(cards) {
+    var order = GROUPS.map(function (g) { return g[0]; }), labels = {}, groups = {};
+    GROUPS.forEach(function (g) { labels[g[0]] = g[1]; });
     cards.forEach(function (c) {
-      var t = c.type || order[0] || 'Memory Cards';
-      if (order.indexOf(t) < 0) order.push(t);
-      (groups[t] = groups[t] || []).push(c);
+      var prefix = String(c.code).split('-')[0];
+      if (order.indexOf(prefix) < 0) { order.push(prefix); labels[prefix] = prefix; }
+      (groups[prefix] = groups[prefix] || []).push(c);
     });
-    return order.filter(function (t) { return groups[t]; }).map(function (t) { return { type: t, cards: groups[t] }; });
+    return order.filter(function (p) { return groups[p]; }).map(function (p) { return { label: labels[p], cards: groups[p] }; });
   }
 
   // What a log records as the job: a customer by name, a typed job, or the choice as it is.
@@ -153,8 +155,8 @@
 
   function listView() {
     var h = '<h1>Items</h1>';
-    groupCards(data.cards, data.types).forEach(function (g) {
-      h += '<h2>' + esc(g.type) + '</h2>';
+    groupCards(data.cards).forEach(function (g) {
+      h += '<h2>' + esc(g.label) + '</h2>';
       g.cards.forEach(function (c) { h += listRow(c); });
     });
     return h + logPanel('Log the ticked items');

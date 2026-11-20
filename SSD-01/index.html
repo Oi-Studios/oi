@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oi cards</title>
+<style>
+  body { font: 18px/1.4 -apple-system, Helvetica, Arial, sans-serif; margin: 0; padding: 20px; color: #111; background: #fff; }
+  h1 { font-size: 40px; margin: 0 0 4px; }
+  h2 { font-size: 22px; margin: 28px 0 12px; }
+  .muted { color: #666; margin: 0 0 20px; }
+  .status { font-size: 28px; font-weight: 700; padding: 16px 20px; border-radius: 12px; margin: 0 0 20px; }
+  .ready { background: #d9ead3; color: #1b5e20; }
+  .out { background: #f4cccc; color: #b71c1c; }
+  .moved { background: #ffe0b2; color: #a84300; }
+  .none { background: #e8e8e8; color: #444; }
+  .note { background: #fdf3d0; color: #5a4300; padding: 12px 16px; border-radius: 10px; margin: 0 0 20px; font-size: 17px; }
+  dl { margin: 0 0 8px; }
+  dt { color: #666; font-size: 14px; margin-top: 10px; }
+  dd { margin: 0; font-size: 20px; }
+  .button { display: block; text-align: center; background: #1f3864; color: #fff; text-decoration: none; font-weight: 700;
+            padding: 16px; border-radius: 12px; font-size: 20px; }
+  .back { display: inline-block; background: #1f3864; color: #fff; text-decoration: none; font-weight: 700;
+          padding: 12px 22px; border-radius: 12px; font-size: 19px; margin: 0 0 18px; }
+  label { display: block; font-size: 15px; color: #444; margin: 14px 0 6px; }
+  select, input[type=text] { width: 100%; box-sizing: border-box; font-size: 18px; padding: 12px; border: 1px solid #bbb;
+                             border-radius: 10px; background: #fff; color: #111; }
+  .actions { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 18px; }
+  .actions button { font: inherit; font-size: 20px; font-weight: 700; padding: 16px; border-radius: 12px; border: 0; cursor: pointer; }
+  .actions button.a-out { background: #b71c1c; color: #fff; }
+  .actions button.a-moved { background: #ef6c00; color: #fff; }
+  .actions button.a-ready { background: #1b5e20; color: #fff; }
+  .actions button:disabled { opacity: 0.5; }
+  .answer { margin: 18px 0 0; padding: 14px 16px; border-radius: 10px; font-size: 18px; }
+  .answer.good { background: #d9ead3; color: #1b5e20; }
+  .answer.bad { background: #f4cccc; color: #b71c1c; }
+  .answer.wait { background: #eeeeee; color: #333; }
+  .small { font-size: 15px; margin-top: 24px; }
+  .row { display: flex; align-items: stretch; border-radius: 10px; margin: 0 0 8px; overflow: hidden; }
+  .row a.card { flex: 1; display: block; padding: 14px 16px; text-decoration: none; color: inherit; min-width: 0; }
+  .row a.card .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .row a.card b { font-size: 22px; white-space: nowrap; }
+  .row a.card .top span { font-size: 15px; text-align: right; }
+  .row a.card .job { display: block; font-size: 14px; margin-top: 4px; opacity: 0.85; }
+  .row a.log { display: flex; align-items: center; padding: 0 18px; background: #1f3864; color: #fff; text-decoration: none; font-weight: 700; }
+  .row label.tick { display: flex; align-items: center; padding: 0 2px 0 14px; cursor: pointer; }
+  .row label.tick input { width: 26px; height: 26px; margin: 0; accent-color: #1f3864; }
+  .picked { font-size: 17px; margin: 0 0 4px; }
+</style>
+</head>
+<body>
+<div id="app"><h1>Oi cards</h1><p class="muted">Loading.</p></div>
+<script>
+  // The page a card's NFC tag or QR code opens: https://osimages.github.io/oi/<CODE>, or
+  // .../<CODE>/log to jump to the buttons. It reads the card from the Oi status sheet's script as
+  // data and logs through the script's log action, so it never needs a Google sign-in. The
+  // list (https://osimages.github.io/oi/) groups items by code (SD cards, microSD cards, SSD
+  // drives) and logs several at once: tick them, then a button.
+  // The script applies the holder rule and answers at once, refusals included. The Google Form
+  // this replaced was retired on 2026-11-20.
+  // The key below is public by nature: anyone with this page can log a card, and every change
+  // is in the sheet's Log with source "Card page". Change the key in the script to cut it off.
+  var DATA = 'https://script.google.com/macros/s/AKfycbwK17tqJC1kY8HJACM2uH0aqJaSnwgTfXHDKRzBJD1SGi8IgjY1QQxgl381K2ZHq96K/exec';
+  var PAGE_KEY = 'cdbf32b9549041f2a2ad6cf15a8d73a0';
+  var ROOT = '/oi/';
+  var CODE_PATTERN = /^[A-Z]{2,3}-\d{2,}$/;
+  var DRY = /[?&]dry=1/.test(location.search);  // test mode: decide and answer, save nothing
+
+  var code = '';
+  var parts = location.pathname.split('/').filter(function (p) { return p; }).reverse();
+  for (var i = 0; i < parts.length; i++) {
+    var p = decodeURIComponent(parts[i]).toUpperCase();
+    if (CODE_PATTERN.test(p)) { code = p; break; }
+  }
+  var jumpToLog = /\/log\/?$/i.test(location.pathname);
+
+  var data = null, answer = null, sending = false;
+  var ticked = {};  // the list's ticked cards, by code
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+  function cls(status) {
+    return status === 'Ready' ? 'ready' : status === 'Checked Out' ? 'out' : status === 'Transferred' ? 'moved' : 'none';
+  }
+  function remembered(key) { try { return localStorage.getItem(key) || ''; } catch (e) { return ''; } }
+  function remember(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
+
+  // The list's sections, by the front of the code: SD cards, microSD cards, SSD drives, then any
+  // other prefix under its own name. Empty sections are left out.
+  var GROUPS = [['SD', 'SD cards'], ['MSD', 'MicroSD cards'], ['SSD', 'SSD drives']];
+  function groupCards(cards) {
+    var order = GROUPS.map(function (g) { return g[0]; }), labels = {}, groups = {};
+    GROUPS.forEach(function (g) { labels[g[0]] = g[1]; });
+    cards.forEach(function (c) {
+      var prefix = String(c.code).split('-')[0];
+      if (order.indexOf(prefix) < 0) { order.push(prefix); labels[prefix] = prefix; }
+      (groups[prefix] = groups[prefix] || []).push(c);
+    });
+    return order.filter(function (p) { return groups[p]; }).map(function (p) { return { label: labels[p], cards: groups[p] }; });
+  }
+
+  // What a log records as the job: a customer by name, a typed job, or the choice as it is.
+  function jobText(choice, other, customer) {
+    if (choice === '__other') return String(other || '').trim();
+    if (choice === 'Customer') { var name = String(customer || '').trim(); return name ? 'Customer: ' + name : ''; }
+    return choice || '';
+  }
+
+  function tickedCodes() {
+    return (data.cards || []).map(function (c) { return c.code; }).filter(function (k) { return ticked[k]; });
+  }
+  function pickedText() {
+    var t = tickedCodes();
+    return t.length ? t.length + ' ticked: ' + t.join(', ') : 'Tick the items above, then choose your name and a button.';
+  }
+
+  function logPanel(title) {
+    var me = remembered('oiName');
+    var h = '<h2 id="log">' + esc(title) + (DRY ? ' (test, nothing is saved)' : '') + '</h2>';
+    if (!code) h += '<p class="picked" id="picked">' + esc(pickedText()) + '</p>';
+    h += '<label for="who">Who are you?</label><select id="who"><option value="">Choose your name</option>';
+    (data.names || []).forEach(function (n) { h += '<option' + (n === me ? ' selected' : '') + '>' + esc(n) + '</option>'; });
+    h += '</select>';
+    h += '<label for="job">Job, when checking out</label><select id="job"><option value="">Choose the job</option>';
+    (data.jobs || []).forEach(function (j) { h += '<option>' + esc(j) + '</option>'; });
+    h += '<option>Personal</option><option>Customer</option><option value="__other">Another job, type it</option></select>';
+    h += '<input type="text" id="customer" placeholder="Customer name" style="display:none;margin-top:8px">';
+    h += '<input type="text" id="otherjob" placeholder="Job name" style="display:none;margin-top:8px">';
+    h += '<div class="actions">' +
+      '<button class="a-out" data-status="Checked Out">Checked Out</button>' +
+      '<button class="a-moved" data-status="Transferred">Transferred</button>' +
+      '<button class="a-ready" data-status="Ready">Ready</button></div>';
+    if (answer) h += '<div class="answer ' + (answer.wait ? 'wait' : answer.good ? 'good' : 'bad') + '">' + esc(answer.text) + '</div>';
+    return h;
+  }
+
+  function cardView(c) {
+    var h = '<a class="back" href="' + ROOT + '">All items</a>';
+    h += '<h1>' + esc(c.code) + '</h1><p class="muted">' + esc(c.name) + '</p>';
+    h += '<div class="status ' + cls(c.status) + '">' + esc(c.status || 'No status yet') + '</div>';
+    if (c.note) h += '<div class="note">' + esc(c.note) + '</div>';
+    if (c.by || c.event || c.at || c.transferredBy) {
+      h += '<dl>';
+      if (c.by) h += '<dt>' + (c.status === 'Checked Out' ? 'With' : 'Last with') + '</dt><dd>' + esc(c.by) + '</dd>';
+      if (c.event) h += '<dt>Event</dt><dd>' + esc(c.event) + '</dd>';
+      if (c.at) h += '<dt>' + (c.status === 'Checked Out' ? 'Since' : 'Checked out') + '</dt><dd>' + esc(c.at) + '</dd>';
+      if (c.transferredBy) h += '<dt>Transferred by</dt><dd>' + esc(c.transferredBy) + (c.transferredAt ? ', ' + esc(c.transferredAt) : '') + '</dd>';
+      h += '</dl>';
+    }
+    return h + logPanel('Log ' + c.code);
+  }
+
+  function listView() {
+    var h = '<h1>Items</h1>';
+    groupCards(data.cards).forEach(function (g) {
+      h += '<h2>' + esc(g.label) + '</h2>';
+      g.cards.forEach(function (c) { h += listRow(c); });
+    });
+    return h + logPanel('Log the ticked items');
+  }
+
+  // A card in use shows who has it and, on a second line, the job it is out for.
+  function listRow(c) {
+    var inUse = c.status === 'Checked Out' || c.status === 'Transferred';
+    var who = inUse && c.by ? ', ' + esc(c.by) : '';
+    var job = inUse && c.event ? '<span class="job">' + esc(c.event) + '</span>' : '';
+    return '<div class="row ' + cls(c.status) + '"><label class="tick"><input type="checkbox" data-code="' + esc(c.code) + '"' +
+      (ticked[c.code] ? ' checked' : '') + ' aria-label="Tick ' + esc(c.code) + '"></label><a class="card" href="' + ROOT + encodeURIComponent(c.code) + '/"><span class="top"><b>' +
+      esc(c.code) + '</b><span>' + esc(c.status || 'No status yet') + who + '</span></span>' + job + '</a>' +
+      '<a class="log" href="' + ROOT + encodeURIComponent(c.code) + '/log/">Log</a></div>';
+  }
+
+
+  // A redraw (an answer, a reload) keeps the job and name already chosen.
+  function chosen() {
+    var who = document.getElementById('who'), job = document.getElementById('job'), other = document.getElementById('otherjob');
+    var customer = document.getElementById('customer');
+    return who ? { who: who.value, job: job.value, other: other.value, customer: customer.value } : null;
+  }
+
+  function render() {
+    var app = document.getElementById('app'), was = chosen();
+    if (code && !data.cards.length) {
+      app.innerHTML = '<a class="back" href="' + ROOT + '">All items</a><h1>' + esc(code) + '</h1><p class="muted">Not in the register.</p>';
+      return;
+    }
+    app.innerHTML = code ? cardView(data.cards[0]) : listView();
+    var job = document.getElementById('job'), other = document.getElementById('otherjob'), customer = document.getElementById('customer');
+    function boxes() {
+      other.style.display = job.value === '__other' ? 'block' : 'none';
+      customer.style.display = job.value === 'Customer' ? 'block' : 'none';
+    }
+    if (was) {
+      if (was.who) document.getElementById('who').value = was.who;
+      if (Array.prototype.some.call(job.options, function (o) { return o.value === was.job; })) job.value = was.job;
+      other.value = was.other;
+      customer.value = was.customer;
+      boxes();
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('.tick input'), function (box) {
+      box.addEventListener('change', function () {
+        ticked[box.getAttribute('data-code')] = box.checked;
+        document.getElementById('picked').textContent = pickedText();
+      });
+    });
+    job.addEventListener('change', boxes);
+    Array.prototype.forEach.call(document.querySelectorAll('.actions button'), function (b) {
+      b.disabled = sending;
+      b.addEventListener('click', function () { logIt(b.getAttribute('data-status')); });
+    });
+  }
+
+  function logIt(status) {
+    var cards = code ? [code] : tickedCodes();
+    var who = document.getElementById('who').value;
+    var choice = document.getElementById('job').value;
+    var job = jobText(choice, document.getElementById('otherjob').value, document.getElementById('customer').value);
+    if (!cards.length) { answer = { good: false, text: 'Tick the items first.' }; return render(); }
+    if (!who) { answer = { good: false, text: 'Choose your name first.' }; return render(); }
+    if (status === 'Checked Out' && choice === 'Customer' && !job) {
+      answer = { good: false, text: "Type the customer's name." };
+      return render();
+    }
+    if (status === 'Checked Out' && !job) {
+      answer = { good: false, text: 'Choose the job you are taking ' + (cards.length > 1 ? 'them' : 'it') + ' for, or Personal.' };
+      return render();
+    }
+    remember('oiName', who);
+    sending = true; answer = { wait: true, text: 'Logging ' + cards.join(', ') + '. Wait for the answer here.' }; render();
+    var body = { action: 'log', token: PAGE_KEY, name: who, cards: cards, status: status, job: job, dry_run: DRY };
+    fetch(DATA, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), credentials: 'omit' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        sending = false;
+        if (!res.ok) { answer = { good: false, text: res.error || 'Not logged.' }; return render(); }
+        // Green only if every card went through; the message says card by card what happened.
+        var answers = res.cards || [];
+        var done = answers.filter(function (a) { return a.outcome === 'applied' || a.outcome === 'taken over'; });
+        var good = answers.length > 0 && done.length === answers.length;
+        var lead = good ? 'Done. ' : done.length ? 'Not all done. ' : 'Not done. ';
+        answer = { good: good, text: lead + (res.message || '') + (DRY ? ' (Test: nothing was saved.)' : '') };
+        if (!DRY) done.forEach(function (a) { ticked[a.card] = false; });
+        load();
+      })
+      .catch(function () {
+        sending = false;
+        answer = { good: false, text: 'Could not reach the card sheet. Nothing was logged. Check the signal and try again.' };
+        render();
+      });
+  }
+
+  var loading = false;
+  function load() {
+    if (loading) return;
+    loading = true;
+    fetch(DATA + '?format=json' + (code ? '&card=' + encodeURIComponent(code) : ''), { credentials: 'omit' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        loading = false;
+        data = d;
+        document.title = code ? code + ' - Oi cards' : 'Oi cards';
+        render();
+        if (jumpToLog) { jumpToLog = false; var el = document.getElementById('log'); if (el) el.scrollIntoView(); }
+      })
+      .catch(function () {
+        loading = false;
+        if (data) return;
+        document.getElementById('app').innerHTML = '<h1>' + esc(code || 'Oi cards') + '</h1><p class="muted">Could not reach the card list. Check the signal and try again.</p>' +
+          '<p><a class="button" href="">Try again</a></p>';
+      });
+  }
+
+  load();
+  // Coming back to this tab: fetch again, so what someone else logged meanwhile shows.
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && !sending) load(); });
+</script>
+</body>
+</html>
