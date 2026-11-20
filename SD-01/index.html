@@ -54,7 +54,8 @@
   // The page a card's NFC tag or QR code opens: https://osimages.github.io/oi/<CODE>, or
   // .../<CODE>/log to jump to the buttons. It reads the card from the Oi status sheet's script as
   // data and logs through the script's log action, so it never needs a Google sign-in. The
-  // list (https://osimages.github.io/oi/) logs several cards at once: tick them, then a button.
+  // list (https://osimages.github.io/oi/) groups items by type (memory cards, SSD drives, as the
+  // sheet's Types tab lists them) and logs several at once: tick them, then a button.
   // The script applies the holder rule and answers at once, refusals included. The Google Form
   // this replaced was retired on 2026-11-20.
   // The key below is public by nature: anyone with this page can log a card, and every change
@@ -87,12 +88,31 @@
   function remembered(key) { try { return localStorage.getItem(key) || ''; } catch (e) { return ''; } }
   function remember(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
 
+  // The list's sections: one per tracked type, in the sheet's Types order, then any type the
+  // list doesn't name. An item without a type counts as the first type.
+  function groupCards(cards, types) {
+    var order = (types || []).slice(), groups = {};
+    cards.forEach(function (c) {
+      var t = c.type || order[0] || 'Memory Cards';
+      if (order.indexOf(t) < 0) order.push(t);
+      (groups[t] = groups[t] || []).push(c);
+    });
+    return order.filter(function (t) { return groups[t]; }).map(function (t) { return { type: t, cards: groups[t] }; });
+  }
+
+  // What a log records as the job: a customer by name, a typed job, or the choice as it is.
+  function jobText(choice, other, customer) {
+    if (choice === '__other') return String(other || '').trim();
+    if (choice === 'Customer') { var name = String(customer || '').trim(); return name ? 'Customer: ' + name : ''; }
+    return choice || '';
+  }
+
   function tickedCodes() {
     return (data.cards || []).map(function (c) { return c.code; }).filter(function (k) { return ticked[k]; });
   }
   function pickedText() {
     var t = tickedCodes();
-    return t.length ? t.length + ' ticked: ' + t.join(', ') : 'Tick the cards above, then choose your name and a button.';
+    return t.length ? t.length + ' ticked: ' + t.join(', ') : 'Tick the items above, then choose your name and a button.';
   }
 
   function logPanel(title) {
@@ -104,7 +124,8 @@
     h += '</select>';
     h += '<label for="job">Job, when checking out</label><select id="job"><option value="">Choose the job</option>';
     (data.jobs || []).forEach(function (j) { h += '<option>' + esc(j) + '</option>'; });
-    h += '<option>Personal</option><option value="__other">Another job, type it</option></select>';
+    h += '<option>Personal</option><option>Customer</option><option value="__other">Another job, type it</option></select>';
+    h += '<input type="text" id="customer" placeholder="Customer name" style="display:none;margin-top:8px">';
     h += '<input type="text" id="otherjob" placeholder="Job name" style="display:none;margin-top:8px">';
     h += '<div class="actions">' +
       '<button class="a-out" data-status="Checked Out">Checked Out</button>' +
@@ -115,7 +136,7 @@
   }
 
   function cardView(c) {
-    var h = '<a class="back" href="' + ROOT + '">All cards</a>';
+    var h = '<a class="back" href="' + ROOT + '">All items</a>';
     h += '<h1>' + esc(c.code) + '</h1><p class="muted">' + esc(c.name) + '</p>';
     h += '<div class="status ' + cls(c.status) + '">' + esc(c.status || 'No status yet') + '</div>';
     if (c.note) h += '<div class="note">' + esc(c.note) + '</div>';
@@ -131,39 +152,51 @@
   }
 
   function listView() {
-    var h = '<h1>Cards</h1>';
-    data.cards.forEach(function (c) {
-      // A card in use shows who has it and, on a second line, the job it is out for.
-      var inUse = c.status === 'Checked Out' || c.status === 'Transferred';
-      var who = inUse && c.by ? ', ' + esc(c.by) : '';
-      var job = inUse && c.event ? '<span class="job">' + esc(c.event) + '</span>' : '';
-      h += '<div class="row ' + cls(c.status) + '"><label class="tick"><input type="checkbox" data-code="' + esc(c.code) + '"' +
-        (ticked[c.code] ? ' checked' : '') + ' aria-label="Tick ' + esc(c.code) + '"></label><a class="card" href="' + ROOT + encodeURIComponent(c.code) + '/"><span class="top"><b>' +
-        esc(c.code) + '</b><span>' + esc(c.status || 'No status yet') + who + '</span></span>' + job + '</a>' +
-        '<a class="log" href="' + ROOT + encodeURIComponent(c.code) + '/log/">Log</a></div>';
+    var h = '<h1>Items</h1>';
+    groupCards(data.cards, data.types).forEach(function (g) {
+      h += '<h2>' + esc(g.type) + '</h2>';
+      g.cards.forEach(function (c) { h += listRow(c); });
     });
-    return h + logPanel('Log the ticked cards');
+    return h + logPanel('Log the ticked items');
   }
+
+  // A card in use shows who has it and, on a second line, the job it is out for.
+  function listRow(c) {
+    var inUse = c.status === 'Checked Out' || c.status === 'Transferred';
+    var who = inUse && c.by ? ', ' + esc(c.by) : '';
+    var job = inUse && c.event ? '<span class="job">' + esc(c.event) + '</span>' : '';
+    return '<div class="row ' + cls(c.status) + '"><label class="tick"><input type="checkbox" data-code="' + esc(c.code) + '"' +
+      (ticked[c.code] ? ' checked' : '') + ' aria-label="Tick ' + esc(c.code) + '"></label><a class="card" href="' + ROOT + encodeURIComponent(c.code) + '/"><span class="top"><b>' +
+      esc(c.code) + '</b><span>' + esc(c.status || 'No status yet') + who + '</span></span>' + job + '</a>' +
+      '<a class="log" href="' + ROOT + encodeURIComponent(c.code) + '/log/">Log</a></div>';
+  }
+
 
   // A redraw (an answer, a reload) keeps the job and name already chosen.
   function chosen() {
     var who = document.getElementById('who'), job = document.getElementById('job'), other = document.getElementById('otherjob');
-    return who ? { who: who.value, job: job.value, other: other.value } : null;
+    var customer = document.getElementById('customer');
+    return who ? { who: who.value, job: job.value, other: other.value, customer: customer.value } : null;
   }
 
   function render() {
     var app = document.getElementById('app'), was = chosen();
     if (code && !data.cards.length) {
-      app.innerHTML = '<a class="back" href="' + ROOT + '">All cards</a><h1>' + esc(code) + '</h1><p class="muted">Not in the register.</p>';
+      app.innerHTML = '<a class="back" href="' + ROOT + '">All items</a><h1>' + esc(code) + '</h1><p class="muted">Not in the register.</p>';
       return;
     }
     app.innerHTML = code ? cardView(data.cards[0]) : listView();
-    var job = document.getElementById('job'), other = document.getElementById('otherjob');
+    var job = document.getElementById('job'), other = document.getElementById('otherjob'), customer = document.getElementById('customer');
+    function boxes() {
+      other.style.display = job.value === '__other' ? 'block' : 'none';
+      customer.style.display = job.value === 'Customer' ? 'block' : 'none';
+    }
     if (was) {
       if (was.who) document.getElementById('who').value = was.who;
       if (Array.prototype.some.call(job.options, function (o) { return o.value === was.job; })) job.value = was.job;
       other.value = was.other;
-      other.style.display = job.value === '__other' ? 'block' : 'none';
+      customer.value = was.customer;
+      boxes();
     }
     Array.prototype.forEach.call(document.querySelectorAll('.tick input'), function (box) {
       box.addEventListener('change', function () {
@@ -171,7 +204,7 @@
         document.getElementById('picked').textContent = pickedText();
       });
     });
-    job.addEventListener('change', function () { other.style.display = job.value === '__other' ? 'block' : 'none'; });
+    job.addEventListener('change', boxes);
     Array.prototype.forEach.call(document.querySelectorAll('.actions button'), function (b) {
       b.disabled = sending;
       b.addEventListener('click', function () { logIt(b.getAttribute('data-status')); });
@@ -181,10 +214,14 @@
   function logIt(status) {
     var cards = code ? [code] : tickedCodes();
     var who = document.getElementById('who').value;
-    var jobValue = document.getElementById('job').value;
-    var job = jobValue === '__other' ? document.getElementById('otherjob').value.trim() : jobValue;
-    if (!cards.length) { answer = { good: false, text: 'Tick the cards first.' }; return render(); }
+    var choice = document.getElementById('job').value;
+    var job = jobText(choice, document.getElementById('otherjob').value, document.getElementById('customer').value);
+    if (!cards.length) { answer = { good: false, text: 'Tick the items first.' }; return render(); }
     if (!who) { answer = { good: false, text: 'Choose your name first.' }; return render(); }
+    if (status === 'Checked Out' && choice === 'Customer' && !job) {
+      answer = { good: false, text: "Type the customer's name." };
+      return render();
+    }
     if (status === 'Checked Out' && !job) {
       answer = { good: false, text: 'Choose the job you are taking ' + (cards.length > 1 ? 'them' : 'it') + ' for, or Personal.' };
       return render();
