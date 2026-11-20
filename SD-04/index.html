@@ -12,7 +12,7 @@
   .status { font-size: 28px; font-weight: 700; padding: 16px 20px; border-radius: 12px; margin: 0 0 20px; }
   .ready { background: #d9ead3; color: #1b5e20; }
   .out { background: #f4cccc; color: #b71c1c; }
-  .moved { background: #fff2cc; color: #7f5a00; }
+  .moved { background: #ffe0b2; color: #a84300; }
   .none { background: #e8e8e8; color: #444; }
   .note { background: #fdf3d0; color: #5a4300; padding: 12px 16px; border-radius: 10px; margin: 0 0 20px; font-size: 17px; }
   dl { margin: 0 0 8px; }
@@ -20,13 +20,15 @@
   dd { margin: 0; font-size: 20px; }
   .button { display: block; text-align: center; background: #1f3864; color: #fff; text-decoration: none; font-weight: 700;
             padding: 16px; border-radius: 12px; font-size: 20px; }
+  .back { display: inline-block; background: #1f3864; color: #fff; text-decoration: none; font-weight: 700;
+          padding: 12px 22px; border-radius: 12px; font-size: 19px; margin: 0 0 18px; }
   label { display: block; font-size: 15px; color: #444; margin: 14px 0 6px; }
   select, input[type=text] { width: 100%; box-sizing: border-box; font-size: 18px; padding: 12px; border: 1px solid #bbb;
                              border-radius: 10px; background: #fff; color: #111; }
   .actions { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 18px; }
   .actions button { font: inherit; font-size: 20px; font-weight: 700; padding: 16px; border-radius: 12px; border: 0; cursor: pointer; }
   .actions button.a-out { background: #b71c1c; color: #fff; }
-  .actions button.a-moved { background: #7f5a00; color: #fff; }
+  .actions button.a-moved { background: #ef6c00; color: #fff; }
   .actions button.a-ready { background: #1b5e20; color: #fff; }
   .actions button:disabled { opacity: 0.5; }
   .answer { margin: 18px 0 0; padding: 14px 16px; border-radius: 10px; font-size: 18px; }
@@ -99,7 +101,7 @@
   }
 
   function cardView(c) {
-    var h = '<p><a href="' + ROOT + '">All cards</a></p>';
+    var h = '<a class="back" href="' + ROOT + '">All cards</a>';
     h += '<h1>' + esc(c.code) + '</h1><p class="muted">' + esc(c.name) + '</p>';
     h += '<div class="status ' + cls(c.status) + '">' + esc(c.status || 'No status yet') + '</div>';
     if (c.note) h += '<div class="note">' + esc(c.note) + '</div>';
@@ -133,7 +135,7 @@
     var app = document.getElementById('app');
     if (!code) { app.innerHTML = listView(); return; }
     if (!data.cards.length) {
-      app.innerHTML = '<p><a href="' + ROOT + '">All cards</a></p><h1>' + esc(code) + '</h1><p class="muted">Not in the register.</p>';
+      app.innerHTML = '<a class="back" href="' + ROOT + '">All cards</a><h1>' + esc(code) + '</h1><p class="muted">Not in the register.</p>';
       return;
     }
     app.innerHTML = cardView(data.cards[0]);
@@ -152,7 +154,7 @@
     if (!who) { answer = { good: false, text: 'Choose your name first.' }; return render(); }
     if (status === 'Checked Out' && !job) { answer = { good: false, text: 'Choose the job you are taking it for, or Personal.' }; return render(); }
     remember('oiName', who);
-    sending = true; answer = { wait: true, text: 'Logging ' + code + '. Wait for the answer here, it can take 20 seconds.' }; render();
+    sending = true; answer = { wait: true, text: 'Logging ' + code + '. Wait for the answer here.' }; render();
     var body = { action: 'log', token: PAGE_KEY, name: who, card: code, status: status, job: job, dry_run: DRY };
     fetch(DATA, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), credentials: 'omit' })
       .then(function (r) { return r.json(); })
