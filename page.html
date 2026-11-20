@@ -43,6 +43,9 @@
   .row a.card .top span { font-size: 15px; text-align: right; }
   .row a.card .job { display: block; font-size: 14px; margin-top: 4px; opacity: 0.85; }
   .row a.log { display: flex; align-items: center; padding: 0 18px; background: #1f3864; color: #fff; text-decoration: none; font-weight: 700; }
+  .row label.tick { display: flex; align-items: center; padding: 0 2px 0 14px; cursor: pointer; }
+  .row label.tick input { width: 26px; height: 26px; margin: 0; accent-color: #1f3864; }
+  .picked { font-size: 17px; margin: 0 0 4px; }
 </style>
 </head>
 <body>
@@ -51,7 +54,9 @@
   // The page a card's NFC tag or QR code opens: https://osimages.github.io/oi/<CODE>, or
   // .../<CODE>/log to jump to the buttons. It reads the card from the Oi status sheet's script as
   // data and logs through the script's log action, so it never needs a Google sign-in. The
-  // script applies the same rule as the form and answers at once, refusals included.
+  // list (https://osimages.github.io/oi/) logs several cards at once: tick them, then a button.
+  // The script applies the holder rule and answers at once, refusals included. The Google Form
+  // this replaced was retired on 2026-11-20.
   // The key below is public by nature: anyone with this page can log a card, and every change
   // is in the sheet's Log with source "Card page". Change the key in the script to cut it off.
   var DATA = 'https://script.google.com/macros/s/AKfycbwK17tqJC1kY8HJACM2uH0aqJaSnwgTfXHDKRzBJD1SGi8IgjY1QQxgl381K2ZHq96K/exec';
@@ -69,6 +74,7 @@
   var jumpToLog = /\/log\/?$/i.test(location.pathname);
 
   var data = null, answer = null, sending = false;
+  var ticked = {};  // the list's ticked cards, by code
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
@@ -81,9 +87,18 @@
   function remembered(key) { try { return localStorage.getItem(key) || ''; } catch (e) { return ''; } }
   function remember(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
 
-  function logPanel(c) {
+  function tickedCodes() {
+    return (data.cards || []).map(function (c) { return c.code; }).filter(function (k) { return ticked[k]; });
+  }
+  function pickedText() {
+    var t = tickedCodes();
+    return t.length ? t.length + ' ticked: ' + t.join(', ') : 'Tick the cards above, then choose your name and a button.';
+  }
+
+  function logPanel(title) {
     var me = remembered('oiName');
-    var h = '<h2 id="log">Log ' + esc(c.code) + (DRY ? ' (test, nothing is saved)' : '') + '</h2>';
+    var h = '<h2 id="log">' + esc(title) + (DRY ? ' (test, nothing is saved)' : '') + '</h2>';
+    if (!code) h += '<p class="picked" id="picked">' + esc(pickedText()) + '</p>';
     h += '<label for="who">Who are you?</label><select id="who"><option value="">Choose your name</option>';
     (data.names || []).forEach(function (n) { h += '<option' + (n === me ? ' selected' : '') + '>' + esc(n) + '</option>'; });
     h += '</select>';
@@ -96,7 +111,6 @@
       '<button class="a-moved" data-status="Transferred">Transferred</button>' +
       '<button class="a-ready" data-status="Ready">Ready</button></div>';
     if (answer) h += '<div class="answer ' + (answer.wait ? 'wait' : answer.good ? 'good' : 'bad') + '">' + esc(answer.text) + '</div>';
-    h += '<p class="small"><a href="' + esc(c.log) + '" target="_blank" rel="noopener">Use the Google Form instead</a></p>';
     return h;
   }
 
@@ -113,7 +127,7 @@
       if (c.transferredBy) h += '<dt>Transferred by</dt><dd>' + esc(c.transferredBy) + (c.transferredAt ? ', ' + esc(c.transferredAt) : '') + '</dd>';
       h += '</dl>';
     }
-    return h + logPanel(c);
+    return h + logPanel('Log ' + c.code);
   }
 
   function listView() {
@@ -123,23 +137,40 @@
       var inUse = c.status === 'Checked Out' || c.status === 'Transferred';
       var who = inUse && c.by ? ', ' + esc(c.by) : '';
       var job = inUse && c.event ? '<span class="job">' + esc(c.event) + '</span>' : '';
-      h += '<div class="row ' + cls(c.status) + '"><a class="card" href="' + ROOT + encodeURIComponent(c.code) + '/"><span class="top"><b>' +
+      h += '<div class="row ' + cls(c.status) + '"><label class="tick"><input type="checkbox" data-code="' + esc(c.code) + '"' +
+        (ticked[c.code] ? ' checked' : '') + ' aria-label="Tick ' + esc(c.code) + '"></label><a class="card" href="' + ROOT + encodeURIComponent(c.code) + '/"><span class="top"><b>' +
         esc(c.code) + '</b><span>' + esc(c.status || 'No status yet') + who + '</span></span>' + job + '</a>' +
         '<a class="log" href="' + ROOT + encodeURIComponent(c.code) + '/log/">Log</a></div>';
     });
-    h += '<p><a class="button" href="' + esc(data.form) + '" target="_blank" rel="noopener">Log several cards</a></p>';
-    return h;
+    return h + logPanel('Log the ticked cards');
+  }
+
+  // A redraw (an answer, a reload) keeps the job and name already chosen.
+  function chosen() {
+    var who = document.getElementById('who'), job = document.getElementById('job'), other = document.getElementById('otherjob');
+    return who ? { who: who.value, job: job.value, other: other.value } : null;
   }
 
   function render() {
-    var app = document.getElementById('app');
-    if (!code) { app.innerHTML = listView(); return; }
-    if (!data.cards.length) {
+    var app = document.getElementById('app'), was = chosen();
+    if (code && !data.cards.length) {
       app.innerHTML = '<a class="back" href="' + ROOT + '">All cards</a><h1>' + esc(code) + '</h1><p class="muted">Not in the register.</p>';
       return;
     }
-    app.innerHTML = cardView(data.cards[0]);
+    app.innerHTML = code ? cardView(data.cards[0]) : listView();
     var job = document.getElementById('job'), other = document.getElementById('otherjob');
+    if (was) {
+      if (was.who) document.getElementById('who').value = was.who;
+      if (Array.prototype.some.call(job.options, function (o) { return o.value === was.job; })) job.value = was.job;
+      other.value = was.other;
+      other.style.display = job.value === '__other' ? 'block' : 'none';
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('.tick input'), function (box) {
+      box.addEventListener('change', function () {
+        ticked[box.getAttribute('data-code')] = box.checked;
+        document.getElementById('picked').textContent = pickedText();
+      });
+    });
     job.addEventListener('change', function () { other.style.display = job.value === '__other' ? 'block' : 'none'; });
     Array.prototype.forEach.call(document.querySelectorAll('.actions button'), function (b) {
       b.disabled = sending;
@@ -148,22 +179,31 @@
   }
 
   function logIt(status) {
+    var cards = code ? [code] : tickedCodes();
     var who = document.getElementById('who').value;
     var jobValue = document.getElementById('job').value;
     var job = jobValue === '__other' ? document.getElementById('otherjob').value.trim() : jobValue;
+    if (!cards.length) { answer = { good: false, text: 'Tick the cards first.' }; return render(); }
     if (!who) { answer = { good: false, text: 'Choose your name first.' }; return render(); }
-    if (status === 'Checked Out' && !job) { answer = { good: false, text: 'Choose the job you are taking it for, or Personal.' }; return render(); }
+    if (status === 'Checked Out' && !job) {
+      answer = { good: false, text: 'Choose the job you are taking ' + (cards.length > 1 ? 'them' : 'it') + ' for, or Personal.' };
+      return render();
+    }
     remember('oiName', who);
-    sending = true; answer = { wait: true, text: 'Logging ' + code + '. Wait for the answer here.' }; render();
-    var body = { action: 'log', token: PAGE_KEY, name: who, card: code, status: status, job: job, dry_run: DRY };
+    sending = true; answer = { wait: true, text: 'Logging ' + cards.join(', ') + '. Wait for the answer here.' }; render();
+    var body = { action: 'log', token: PAGE_KEY, name: who, cards: cards, status: status, job: job, dry_run: DRY };
     fetch(DATA, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), credentials: 'omit' })
       .then(function (r) { return r.json(); })
       .then(function (res) {
         sending = false;
         if (!res.ok) { answer = { good: false, text: res.error || 'Not logged.' }; return render(); }
-        var c = (res.cards || [])[0] || {};
-        var good = c.outcome === 'applied' || c.outcome === 'taken over';
-        answer = { good: good, text: (good ? 'Done. ' : 'Not done. ') + (res.message || '') + (DRY ? ' (Test: nothing was saved.)' : '') };
+        // Green only if every card went through; the message says card by card what happened.
+        var answers = res.cards || [];
+        var done = answers.filter(function (a) { return a.outcome === 'applied' || a.outcome === 'taken over'; });
+        var good = answers.length > 0 && done.length === answers.length;
+        var lead = good ? 'Done. ' : done.length ? 'Not all done. ' : 'Not done. ';
+        answer = { good: good, text: lead + (res.message || '') + (DRY ? ' (Test: nothing was saved.)' : '') };
+        if (!DRY) done.forEach(function (a) { ticked[a.card] = false; });
         load();
       })
       .catch(function () {
