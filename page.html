@@ -88,9 +88,9 @@
   function remembered(key) { try { return localStorage.getItem(key) || ''; } catch (e) { return ''; } }
   function remember(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
 
-  // The list's sections, by the front of the code: SD cards, microSD cards, SSD drives, then any
+  // The list's sections, by the front of the code: SD cards, microSD cards, SSD drives, hard drives, then any
   // other prefix under its own name. Empty sections are left out.
-  var GROUPS = [['SD', 'SD cards'], ['MSD', 'MicroSD cards'], ['SSD', 'SSD drives']];
+  var GROUPS = [['SD', 'SD cards'], ['MSD', 'MicroSD cards'], ['SSD', 'SSD drives'], ['HD', 'Hard drives']];
   function groupCards(cards) {
     var order = GROUPS.map(function (g) { return g[0]; }), labels = {}, groups = {};
     GROUPS.forEach(function (g) { labels[g[0]] = g[1]; });
