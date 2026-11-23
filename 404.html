@@ -15,6 +15,9 @@
   .moved { background: #ffe0b2; color: #a84300; }
   .none { background: #e8e8e8; color: #444; }
   .note { background: #fdf3d0; color: #5a4300; padding: 12px 16px; border-radius: 10px; margin: 0 0 20px; font-size: 17px; }
+  .copy { padding: 12px 16px; border-radius: 10px; margin: 0 0 20px; font-size: 18px; font-weight: 600; }
+  .copy.safe { background: #d9ead3; color: #1b5e20; }
+  .copy.unsafe { background: #f4cccc; color: #b71c1c; }
   dl { margin: 0 0 8px; }
   dt { color: #666; font-size: 14px; margin-top: 10px; }
   dd { margin: 0; font-size: 20px; }
@@ -109,6 +112,16 @@
     return choice || '';
   }
 
+  // For whoever scans a card that is out: is its footage copied off it yet? Oi Connect fills in the
+  // field copy once a laptop holds a verified copy; one verified copy is enough to reuse the card.
+  // The holder (`me`) isn't warned off their own card, which is empty right after checking it out.
+  function copyWarning(c, me) {
+    if (c.status !== 'Checked Out') return '';
+    if (c.copy) return 'Copied to ' + c.copy + '. Safe to format.';
+    if (me && c.by === me) return '';
+    return 'Not copied yet: ' + (c.event || 'the footage') + ' may be only on this card. Don\'t format it.';
+  }
+
   function tickedCodes() {
     return (data.cards || []).map(function (c) { return c.code; }).filter(function (k) { return ticked[k]; });
   }
@@ -141,6 +154,8 @@
     var h = '<a class="back" href="' + ROOT + '">All items</a>';
     h += '<h1>' + esc(c.code) + '</h1><p class="muted">' + esc(c.name) + '</p>';
     h += '<div class="status ' + cls(c.status) + '">' + esc(c.status || 'No status yet') + '</div>';
+    var warning = copyWarning(c, remembered('oiName'));
+    if (warning) h += '<div class="copy ' + (c.copy ? 'safe' : 'unsafe') + '">' + esc(warning) + '</div>';
     if (c.note) h += '<div class="note">' + esc(c.note) + '</div>';
     if (c.by || c.event || c.at || c.transferredBy) {
       h += '<dl>';
