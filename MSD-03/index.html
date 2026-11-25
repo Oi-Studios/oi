@@ -33,7 +33,7 @@
   .actions button.a-out { background: #b71c1c; color: #fff; }
   .actions button.a-moved { background: #ef6c00; color: #fff; }
   .actions button.a-ready { background: #1b5e20; color: #fff; }
-  .actions button:disabled { opacity: 0.5; }
+  .actions button:disabled { background: #c4c4c4; color: #f4f4f4; cursor: default; }
   .answer { margin: 18px 0 0; padding: 14px 16px; border-radius: 10px; font-size: 18px; }
   .answer.good { background: #d9ead3; color: #1b5e20; }
   .answer.bad { background: #f4cccc; color: #b71c1c; }
@@ -116,10 +116,15 @@
   // field copy once a laptop holds a verified copy; one verified copy is enough to reuse the card.
   // The holder (`me`) isn't warned off their own card, which is empty right after checking it out.
   function copyWarning(c, me) {
+    if (c.copy && (c.status === 'Checked Out' || c.status === 'Transferred')) return 'Copied to ' + c.copy + '. Safe to format.';
     if (c.status !== 'Checked Out') return '';
-    if (c.copy) return 'Copied to ' + c.copy + '. Safe to format.';
     if (me && c.by === me) return '';
     return 'Not copied yet: ' + (c.event || 'the footage') + ' may be only on this card. Don\'t format it.';
+  }
+
+  // The state a card is already in: its button is greyed out on the card's own page (Nick, 2026-11-25).
+  function isCurrent(c, status) {
+    return !!c && !!c.status && c.status === status;
   }
 
   function tickedCodes() {
@@ -223,7 +228,7 @@
     });
     job.addEventListener('change', boxes);
     Array.prototype.forEach.call(document.querySelectorAll('.actions button'), function (b) {
-      b.disabled = sending;
+      b.disabled = sending || (!!code && isCurrent(data.cards[0], b.getAttribute('data-status')));
       b.addEventListener('click', function () { logIt(b.getAttribute('data-status')); });
     });
   }
