@@ -18,6 +18,7 @@
   .copy { padding: 12px 16px; border-radius: 10px; margin: 0 0 20px; font-size: 18px; font-weight: 600; }
   .copy.safe { background: #d9ead3; color: #1b5e20; }
   .copy.unsafe { background: #f4cccc; color: #b71c1c; }
+  .copy.once { background: #fce8b2; color: #7a4f01; }
   dl { margin: 0 0 8px; }
   dt { color: #666; font-size: 14px; margin-top: 10px; }
   dd { margin: 0; font-size: 20px; }
@@ -33,7 +34,7 @@
   .actions button.a-out { background: #b71c1c; color: #fff; }
   .actions button.a-moved { background: #ef6c00; color: #fff; }
   .actions button.a-ready { background: #1b5e20; color: #fff; }
-  .actions button:disabled { opacity: 0.5; }
+  .actions button:disabled { background: #c4c4c4; color: #f4f4f4; cursor: default; }
   .answer { margin: 18px 0 0; padding: 14px 16px; border-radius: 10px; font-size: 18px; }
   .answer.good { background: #d9ead3; color: #1b5e20; }
   .answer.bad { background: #f4cccc; color: #b71c1c; }
@@ -54,10 +55,11 @@
 <body>
 <div id="app"><h1>Oi cards</h1><p class="muted">Loading.</p></div>
 <script>
-  // The page a card's NFC tag or QR code opens: https://osimages.github.io/oi/<CODE>, or
+  // The page a card's NFC tag or QR code opens: https://c.oistudios.com.au/<CODE> (until it answers,
+  // https://oi-studios.github.io/oi/<CODE>), or
   // .../<CODE>/log to jump to the buttons. It reads the card from the Oi status sheet's script as
   // data and logs through the script's log action, so it never needs a Google sign-in. The
-  // list (https://osimages.github.io/oi/) groups items by code (SD cards, microSD cards, SSD
+  // list (the address with no code) groups items by code (SD cards, microSD cards, SSD
   // drives) and logs several at once: tick them, then a button.
   // The script applies the holder rule and answers at once, refusals included. The Google Form
   // this replaced was retired on 2026-11-20.
@@ -115,11 +117,20 @@
   // For whoever scans a card that is out: is its footage copied off it yet? Oi Connect fills in the
   // field copy once a laptop holds a verified copy; one verified copy is enough to reuse the card.
   // The holder (`me`) isn't warned off their own card, which is empty right after checking it out.
+  // Whether a card in use is safe to format: green only after two copies, the field rule (Nick,
+  // 2026-11-26); amber after one; red for none, except to its holder, who knows.
   function copyWarning(c, me) {
-    if (c.status !== 'Checked Out') return '';
-    if (c.copy) return 'Copied to ' + c.copy + '. Safe to format.';
-    if (me && c.by === me) return '';
-    return 'Not copied yet: ' + (c.event || 'the footage') + ' may be only on this card. Don\'t format it.';
+    var out = c.status === 'Checked Out' || c.status === 'Transferred';
+    if (out && c.done) return { level: 'safe', text: 'Copied twice: ' + (c.copy ? c.copy + ', and again ' : '') + c.done + '. Safe to format.' };
+    if (out && c.copy) return { level: 'once', text: 'Copied once: ' + c.copy + '. Second copy still to make: don\'t format it yet.' };
+    if (c.status !== 'Checked Out') return null;
+    if (me && c.by === me) return null;
+    return { level: 'unsafe', text: 'Not copied yet: ' + (c.event || 'the footage') + ' may be only on this card. Don\'t format it.' };
+  }
+
+  // The state a card is already in: its button is greyed out on the card's own page (Nick, 2026-11-25).
+  function isCurrent(c, status) {
+    return !!c && !!c.status && c.status === status;
   }
 
   function tickedCodes() {
@@ -155,7 +166,7 @@
     h += '<h1>' + esc(c.code) + '</h1><p class="muted">' + esc(c.name) + '</p>';
     h += '<div class="status ' + cls(c.status) + '">' + esc(c.status || 'No status yet') + '</div>';
     var warning = copyWarning(c, remembered('oiName'));
-    if (warning) h += '<div class="copy ' + (c.copy ? 'safe' : 'unsafe') + '">' + esc(warning) + '</div>';
+    if (warning) h += '<div class="copy ' + warning.level + '">' + esc(warning.text) + '</div>';
     if (c.note) h += '<div class="note">' + esc(c.note) + '</div>';
     if (c.by || c.event || c.at || c.transferredBy) {
       h += '<dl>';
@@ -223,7 +234,7 @@
     });
     job.addEventListener('change', boxes);
     Array.prototype.forEach.call(document.querySelectorAll('.actions button'), function (b) {
-      b.disabled = sending;
+      b.disabled = sending || (!!code && isCurrent(data.cards[0], b.getAttribute('data-status')));
       b.addEventListener('click', function () { logIt(b.getAttribute('data-status')); });
     });
   }
