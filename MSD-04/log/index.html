@@ -120,6 +120,8 @@
   // 2026-11-26); amber after one; red for none, except to its holder, who knows.
   function copyWarning(c, me) {
     var out = c.status === 'Checked Out' || c.status === 'Transferred';
+    // Checked out but not used: Oi Connect found nothing shot since, and the earlier footage copied.
+    if (out && /^Not used/.test(c.done || '')) return { level: 'safe', text: 'Not used: nothing new on it since it was checked out, and its earlier footage is already copied. Safe to format.' };
     if (out && c.done) return { level: 'safe', text: 'Copied twice: ' + (c.copy ? c.copy + ', and again ' : '') + c.done + '. Safe to format.' };
     if (out && c.copy) return { level: 'once', text: 'Copied once: ' + c.copy + '. Second copy still to make: don\'t format it yet.' };
     if (c.status !== 'Checked Out') return null;
